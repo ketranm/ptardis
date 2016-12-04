@@ -28,9 +28,19 @@ class NMT(nn.Container):
         )
 
         self.hidsize = hidsize
+        self.nlayers = nlayers
 
     def forward(self, input, hidden):
-        enc_output, enc_hidden = self.encoder(input[1], hidden)
-        dec_output, dec_hidden = self.decoder(input[2], enc_hidden)
-        output = classifier(dec_output.view(-1, self.hidsize))
+        #enc_output, enc_hidden = self.encoder(input[0], hidden)
+        _, enc_hidden = self.encoder(input[0], hidden)
+        dec_output, dec_hidden = self.decoder(input[1], enc_hidden)
+        output = self.classifier(dec_output.view(-1, self.hidsize))
         output = output.view(dec_output.size(0), dec_output.size(1), -1)
+        return output
+        #print('got here biatch!')
+
+    def init_hidden(self, batch_size):
+        """Generate the first hidden states for encoder."""
+        weight = next(self.parameters()).data
+        return (Variable(weight.new(self.nlayers, batch_size, self.hidsize).zero_()),
+                Variable(weight.new(self.nlayers, batch_size, self.hidsize).zero_()))

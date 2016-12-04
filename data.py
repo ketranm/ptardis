@@ -9,13 +9,13 @@ import os
 
 class Dictionary(object):
     def __init__(self):
-        self.word2idx = {'<pad>':1, '<s>':2, '</s>':3, '<unk>':4}
-        self.idx2word = [1, 2, 3, 4]
+        self.word2idx = {'<pad>':0, '<s>':1, '</s>':2, '<unk>':3}
+        self.idx2word = [0, 1, 2, 3]
 
     def addword(self, word):
         if word not in self.word2idx:
             self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word)
+            self.word2idx[word] = len(self.idx2word) - 1
 
         return self.word2idx[word]
 
@@ -70,12 +70,12 @@ class BitextIterator(object):
                 for t in range(tl - len(tt)):
                     tt.append(1)
                 # reversing the source sentences
-                source_bucket[(len(ss), len(tt))].append(ss.reverse())
+                ss.reverse()
+                source_bucket[(len(ss), len(tt))].append(ss)
                 target_bucket[(len(ss), len(tt))].append(tt)
-
         for key in source_bucket.keys():
-            ss = torch.IntTensor(source_bucket[key]).t().split(batch_size, 1)
-            tt = torch.IntTensor(target_bucket[key]).t().split(batch_size, 1)
+            ss = torch.LongTensor(source_bucket[key]).t().split(batch_size, 1)
+            tt = torch.LongTensor(target_bucket[key]).t().split(batch_size, 1)
 
             for srcb, trgb in zip(ss, tt):
                 data.append((srcb, trgb))
