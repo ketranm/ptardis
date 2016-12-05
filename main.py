@@ -11,8 +11,6 @@ import data
 import model
 import math
 import time
-import torch.optim as optim
-
 
 parser = argparse.ArgumentParser(description="Neural Machine Translation")
 # data
@@ -30,13 +28,15 @@ parser.add_argument('-nlayers', type=int, default=3, help="number of layers")
 # optimization
 parser.add_argument('-dropout', type=float, default=0.4, help="dropout rate")
 parser.add_argument('-clip', type=float, default=5, help="Gradient clipping")
-parser.add_argument('-lr', type=float, default=1, help="Learning rate")
-parser.add_argument('-maxepoch', type=int, default=13, help="max number epochs")
+parser.add_argument('-lr', type=float, default=1.0, help="Learning rate")
+parser.add_argument('-decay_after', type=int, default=8, help="decay lr after this epoch!")
+parser.add_argument('-decay', type=float, default=0.5, help="decay rate")
+parser.add_argument('-maxepochs', type=int, default=13, help="max number epochs")
 # cuda
 parser.add_argument('-cuda', action='store_true', help="use CUDA")
 
 # Misc
-parser.add_argument('-reportint', type=int, default=200, help='Report interval')
+parser.add_argument('-reportint', type=int, default=20, help='Report interval')
 
 args = parser.parse_args()
 
@@ -77,35 +77,44 @@ def clip_grad(model, clip):
     return min(1, clip / (totalnorm + 1e-6))
 
 # constructing an optimizer
-optimizer = optim.Adam(encdec.parameters())
 
-prev_loss = None
+prev_loss = 1e20
 
 nbatches = len(bitext.data)
 print('number of batches {:d}'.format(nbatches))
-start_time = time.time()
-total_loss = 0
 
+nupdates = 0
 
-for i in range(1, nbatches + 1):
-    encdec.zero_grad()
-    sample = bitext.next()
-    inp, target = prepro(sample)
-    batch_size = inp[0].data.size(1)
-    hidden = encdec.init_hidden(batch_size)
-    output = encdec(inp, hidden)
-    loss = criterion(output.view(-1, target_size), target)
-    loss.backward()
-    clipped_val = clip_grad(encdec, args.clip)
+for epoch in range(1, args.maxepochs+1):
+    total_loss = 0.0
+    start_time = time.time()
 
-    for p in encdec.parameters():
-        p.grad.mul(clipped_val)
-    optimizer.step()
-    
-    total_loss += loss.data[0]
-    loss = 0 # do we need it?
-    if i % arg.reportint == 0:
-        elapsed = time.time() - start_time
-        cur_loss = total_loss / i
-        print('| train perplexity {:.4f} | batch/sec {:.1f}'.format(
-            math.exp(cur_loss), i/elapsed))
+    for i in range(1, nbatches+1):
+        encdec.zero_grad()
+        sample = bitext.next()
+        inp, target = prepro(sample)
+        batch_size = inp[0].data.size(1)
+        hidden = encdec.init_hidden(batch_size)
+        output = encdec(inp, hidden)
+        loss = criterion(output.view(-1, target_size), target)
+        loss.backward()
+        clipped_lr = args.lr * clip_grad(encdec, args.clip)
+
+        for p in encdec.parameters():
+            p.data.sub_(p.grad.mul(clipped_lr))
+
+        total_loss += loss.data[0]
+        loss = 0
+        nupdates += 1
+        if nupdates % args.reportint == 0:
+            elapsed = time.time() - start_time
+            cur_loss = total_loss / i
+            print('| epoch {:.3f} | train ppl {:.4f} | updates {:d} | {:.1f} batch/sec'.format(
+                nupdates/nbatches, math.exp(cur_loss), nupdates, i/elapsed))
+
+    if prev_loss < total_loss:
+        args.lr = args.lr * args.decay
+        print('current learning rate {:.5f}'.format(args.lr))
+    if args.lr < 1e-5:
+        break
+    prev_loss = total_loss
