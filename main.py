@@ -11,6 +11,8 @@ import data
 import model
 import math
 import time
+import torch.optim as optim
+
 
 parser = argparse.ArgumentParser(description="Neural Machine Translation")
 # data
@@ -33,13 +35,17 @@ parser.add_argument('-maxepoch', type=int, default=13, help="max number epochs")
 # cuda
 parser.add_argument('-cuda', action='store_true', help="use CUDA")
 
+# Misc
+parser.add_argument('-reportint', type=int, default=200, help='Report interval')
+
 args = parser.parse_args()
 
 
 if torch.cuda.is_available() and not args.cuda:
     print("WARNING: you have a CUDA device, you should probably run with -cuda")
 
-bitext = data.BitextIterator(args.data, args.source, args.target, args.batch_size)
+bitext = data.BitextIterator(args.data, args.source, args.target,
+                            args.batch_size)
 
 source_size = bitext.source_dict.size()
 target_size = bitext.target_dict.size()
@@ -48,6 +54,8 @@ encdec = model.NMT(source_size, target_size, args.embsize,
 weight = torch.ones(target_size)
 weight[0] = 0
 criterion = nn.CrossEntropyLoss(weight)
+
+# transfer model to cuda
 if args.cuda:
     encdec.cuda()
     criterion.cuda()
@@ -67,13 +75,18 @@ def clip_grad(model, clip):
         totalnorm += modulenorm ** 2
     totalnorm = math.sqrt(totalnorm)
     return min(1, clip / (totalnorm + 1e-6))
-# loop over epoches
+
+# constructing an optimizer
+optimizer = optim.Adam(encdec.parameters())
+
 prev_loss = None
 
 nbatches = len(bitext.data)
 print('number of batches {:d}'.format(nbatches))
 start_time = time.time()
 total_loss = 0
+
+
 for i in range(1, nbatches + 1):
     encdec.zero_grad()
     sample = bitext.next()
@@ -83,15 +96,16 @@ for i in range(1, nbatches + 1):
     output = encdec(inp, hidden)
     loss = criterion(output.view(-1, target_size), target)
     loss.backward()
-    clipped_lr = args.lr * clip_grad(encdec, args.clip)
+    clipped_val = clip_grad(encdec, args.clip)
 
     for p in encdec.parameters():
-        p.data.sub_(p.grad.mul(clipped_lr))
+        p.grad.mul(clipped_val)
+    optimizer.step()
+    
     total_loss += loss.data[0]
     loss = 0 # do we need it?
-    if i%20 == 0:
+    if i % arg.reportint == 0:
         elapsed = time.time() - start_time
         cur_loss = total_loss / i
         print('| train perplexity {:.4f} | batch/sec {:.1f}'.format(
             math.exp(cur_loss), i/elapsed))
-        #start_time = time.time()

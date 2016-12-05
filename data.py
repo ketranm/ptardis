@@ -6,6 +6,7 @@ import pickle
 from collections import defaultdict
 import torch
 import os
+import random
 
 class Dictionary(object):
     def __init__(self):
@@ -52,6 +53,7 @@ class BitextIterator(object):
         else:
             self.data = self.tensorize(source, target, batch_size)
             torch.save(self.data, data_file)
+        self.counter = 0  # count training examples
 
     def tensorize(self, source, target, batch_size):
         """Convert raw text to torch Tensors."""
@@ -105,4 +107,8 @@ class BitextIterator(object):
         return ids
 
     def next(self):
-        return self.data.pop()
+        if self.counter == len(self.data):
+            random.shuffle(self.data)
+            self.counter = 0
+        self.counter += 1
+        return self.data[self.counter - 1]
