@@ -29,7 +29,8 @@ parser.add_argument('-nlayers', type=int, default=3, help="number of layers")
 parser.add_argument('-dropout', type=float, default=0.4, help="dropout rate")
 parser.add_argument('-clip', type=float, default=5, help="Gradient clipping")
 parser.add_argument('-lr', type=float, default=1.0, help="Learning rate")
-parser.add_argument('-decay_after', type=int, default=8, help="decay lr after this epoch!")
+parser.add_argument('-decay_after', type=int, default=8,
+                    help="decay lr after this epoch!")
 parser.add_argument('-decay', type=float, default=0.5, help="decay rate")
 parser.add_argument('-maxepochs', type=int, default=13, help="max number epochs")
 # cuda
@@ -37,7 +38,10 @@ parser.add_argument('-cuda', action='store_true', help="use CUDA")
 
 # Misc
 parser.add_argument('-reportint', type=int, default=20, help='Report interval')
-
+parser.add_argument('-saveint', type=int, default=10000,
+                    help="Save checkpoint interval")
+parser.add_argument('-checkpoint', type=str, default-'./checkpoint',
+                    help="Checkpoint location")
 args = parser.parse_args()
 
 
@@ -111,6 +115,12 @@ for epoch in range(1, args.maxepochs+1):
             cur_loss = total_loss / i
             print('| epoch {:.3f} | train ppl {:.4f} | updates {:d} | {:.1f} batch/sec'.format(
                 nupdates/nbatches, math.exp(cur_loss), nupdates, i/elapsed))
+
+        if nupdates % args.saveint == 0:
+            checkpoint = '{}/model.{:6d}.pt'.format(args.checkpoint, nupdates)
+            with open(checkpoint, 'wb') as f:
+                torch.save(encdec)
+            print('| saved model: ' + checkpoint)
 
     if prev_loss < total_loss:
         args.lr = args.lr * args.decay
