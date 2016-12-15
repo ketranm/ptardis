@@ -107,6 +107,16 @@ class BitextIterator(object):
             ids.extend(rightpads)
         return ids
 
+    def idx2str(self, input):
+        res = []
+        flat_input = input.view(-1)
+        for i in range(flat_input.numel()):
+            res.append(flat_input[i])
+        print(res)
+        out = [self.target_dict.word(x) for x in res]
+        #map(lambda x: self.source_dict.word(x), res)
+        return ' '.join(out)
+
     def next(self):
         if self.counter == len(self.data):
             random.shuffle(self.data)

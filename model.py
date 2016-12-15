@@ -75,13 +75,16 @@ class NMT(nn.Container):
         output = output.view(dec_output.size(0), dec_output.size(1), -1)
         return output
 
-    def init_steps(self, input, hidden):
+    def init_step(self, input, hidden):
         """run the encoder and initialize the decoder"""
         _, enc_hidden = self.encoder(input, hidden)
-        return (Variable(enc_hidden[1].data), Variable(enc_hidden[2].data))
+        return (Variable(enc_hidden[0].data), Variable(enc_hidden[1].data))
 
     def step(self, input, hidden):
         """one step forward of decoder"""
+        dec_output, dec_hidden = self.decoder(input, hidden)
+        output = self.classifier(dec_output.view(-1, self.hidsize))
+        return output, dec_hidden
 
     def init_hidden(self, batch_size):
         """Generate the first hidden states for encoder."""

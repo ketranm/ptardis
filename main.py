@@ -85,6 +85,15 @@ def clip_grad(model, clip):
 # constructing an optimizer
 
 prev_loss = 1e20
+from  beam import beam_search
+with open('./checkpoint/model.014000.pt', 'rb') as f:
+    encdec = torch.load(f)
+
+sample = bitext.next()
+x = sample[0].cuda()
+y = beam_search(encdec, x, 5, 50, 1, 2)
+s = bitext.idx2str(y.contiguous())
+print(s)
 
 nbatches = len(bitext.data)
 print('number of batches {:d}'.format(nbatches))
