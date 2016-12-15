@@ -2,8 +2,9 @@
 # Data preparation for NMT
 ###############################
 
-import pickle
+import cPickle as pkl
 from collections import defaultdict
+from itertools import izip
 import torch
 import os
 import random
@@ -64,7 +65,7 @@ class BitextIterator(object):
         data = []
 
         with open(source) as sf, open(target) as tf:
-            for ss, tt in zip(sf, tf):
+            for ss, tt in izip(sf, tf):
                 ss = self.numberize(self.source_dict, ss)
                 tt = self.numberize(self.target_dict, tt, [2], [3])
                 tl = (len(tt) + max_diff) - len(tt) % max_diff
@@ -88,11 +89,11 @@ class BitextIterator(object):
         """Load dictionary if it exists, otherwise create it."""
 
         if os.path.isfile(dict_file):
-            return pickle.load(open(dict_file, 'rb'))
+            return pkl.load(open(dict_file, 'rb'))
         else:
             dict = Dictionary()
             dict.make_dict(text_file)
-            pickle.dump(dict, open(dict_file, 'wb'))
+            pkl.dump(dict, open(dict_file, 'wb'))
             return dict
 
     def numberize(self, dict, line, leftpads=None, rightpads=None):
