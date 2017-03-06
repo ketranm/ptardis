@@ -100,6 +100,7 @@ class TextIterator:
 
                 # read from source file and map to word index
                 tt = self.target_buffer.pop()
+                # append bos and eos to target
                 tt = [2] + [self.target_dict[w] if w in self.target_dict else 1
                       for w in tt] + [3]
                 if self.n_words_target > 0:
