@@ -49,7 +49,7 @@ P3=$5
 perl $P1/tokenizer.perl -threads 5 -l $S < ${P3}/all_${S}-${T}.${S} > ${P3}/all_${S}-${T}.${S}.tok
 perl $P1/tokenizer.perl -threads 5 -l $T < ${P3}/all_${S}-${T}.${T} > ${P3}/all_${S}-${T}.${T}.tok
 perl $P1/tokenizer.perl -threads 5 -l $S < ${P3}/ted2013/ted.tst2013.${S} > ${P3}/ted2013.${S}.tok
-perl $P1/tokenizer.perl -threads 5 -l $T < ${P3}/ted2014/ted.tst2014.${T} > ${P3}/ted2014.${T}.tok
+perl $P1/tokenizer.perl -threads 5 -l $T < ${P3}/ted2013/ted.tst2013.${T} > ${P3}/ted2013.${T}.tok
 
 # BPE
 if [ ! -f "${P3}/${S}.bpe" ]; then
@@ -72,7 +72,7 @@ encode () {
 encode ${P3}/${S}.bpe ${P3}/all_${S}-${T}.${S}.tok ${P3}/all_${S}-${T}.${S}.tok.bpe
 encode ${P3}/${T}.bpe ${P3}/all_${S}-${T}.${T}.tok ${P3}/all_${S}-${T}.${T}.tok.bpe
 encode ${P3}/${S}.bpe ${P3}/ted2013.${S}.tok ${P3}/ted2013.${S}.tok.bpe
-encode ${P3}/${T}.bpe ${P3}/ted2014.${T}.tok ${P3}/ted2014.${T}.tok.bpe
+encode ${P3}/${T}.bpe ${P3}/ted2013.${T}.tok ${P3}/ted2013.${T}.tok.bpe
 
 # shuffle
 $PYTHON $P1/shuffle.py ${P3}/all_${S}-${T}.${S}.tok.bpe ${P3}/all_${S}-${T}.${T}.tok.bpe
