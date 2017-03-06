@@ -110,7 +110,7 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(args.dropout)
         self.hidden_size = args.rnn_size
 
-    def forward(self, input, hidden, context, mask, init_output=None):
+    def forward(self, input, hidden, context, mask=None, init_output=None):
         emb = self.lut(input)
         batch_size = input.size(1)
         h_size = (batch_size, self.hidden_size)
@@ -122,8 +122,10 @@ class Decoder(nn.Module):
         else:
             output = init_output
         attns = []
+
         # set mask
-        self.attn.apply_mask(mask)
+        if mask is not None:
+            self.attn.apply_mask(mask)
         for i, emb_t in enumerate(emb.split(1)):
             emb_t = emb_t.squeeze(0)
             emb_t = torch.cat([emb_t, output], 1)
