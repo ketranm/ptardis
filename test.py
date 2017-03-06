@@ -1,28 +1,25 @@
 import argparse
 import torch
 import torch.nn as nn
-
 from torch.autograd import Variable
 from data_iterator import TextIterator
 import models
-
+import math
+import time
 
 # build args parser
 parser = argparse.ArgumentParser(description='Training NMT')
 
-parser.add_argument('--src_train', required=True,
-                    help='Path to source train file.')
-parser.add_argument('--tgt_train', required=True,
-                    help='Path to target train file.')
-parser.add_argument('--src_valid', required=True,
-                    help='Path to source valid file.')
-parser.add_argument('--tgt_valid', required=True,
-                    help='Path to target valid file.')
+parser.add_argument('--datasets', required=True, default=[],
+                    nargs='+', type=str,
+                    help='source_file target_file.')
+parser.add_argument('--valid_datasets', required=True, default=[],
+                    nargs='+', type=str,
+                    help='valid_source valid target files.')
 # dictionaries
-parser.add_argument('--src_dict', required=True,
-                    help='Path to source vocab file.')
-parser.add_argument('--tgt_dict', required=True,
-                    help='Path to target vocab file.')
+parser.add_argument('--dicts', required=True, default=[],
+                    nargs='+',
+                    help='source_vocab.pkl target_vocab.pkl files.')
 
 parser.add_argument('--n_words_src', type=int, default=-1,
                     help='Number of source words')
@@ -44,21 +41,33 @@ parser.add_argument('--dropout', type=float, default=0.3,
                     help='dropout rate.')
 parser.add_argument('--lr', type=float, default=0.0001,
                     help='Learning rate.')
-parser.add_argument('--clip', type=float, default=1.,
+parser.add_argument('--clip', type=float, default=5.,
                     help='Gradient norm clip threshold.')
 # Memory management
 parser.add_argument('--max_generator_batches', type=int, default=32,
                     help='Flush the output by this number')
 
+parser.add_argument('--gpus', default=[], nargs='+', type=int,
+                    help="Use CUDA")
 
-parser.add_argument('--cuda', type=bool, default=False,
-                    help='Using cuda.')
+parser.add_argument('--seed', default=528491, type=int,
+                    help="Inception seed.")
+# Utils
+parser.add_argument('--report_freq', type=int, default=20,
+                    help="display training progress.")
 args = parser.parse_args()
+args.cuda = len(args.gpus)
 print(args)
+torch.manual_seed(args.seed)
+
+if torch.cuda.is_available() and not args.cuda:
+    print("WARNING: You have a CUDA device, so you should probably run with -gpus 0")
+if args.cuda:
+    torch.cuda.set_device(args.gpus[0])
+    torch.cuda.manual_seed(args.seed)
 
 # batch preparation
-def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=30000,
-                 n_words=30000, eval=False):
+def prepare_data(seqs_x, seqs_y, maxlen=None, eval=False):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
     lengths_y = [len(s) for s in seqs_y]
@@ -76,7 +85,6 @@ def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=30000,
     seqs_y = new_seqs_y
     lengths_x = [len(s) for s in seqs_x]
     lengths_y = [len(s) for s in seqs_y]
-
     maxlen_x = torch.IntTensor(lengths_x).max()
     maxlen_y = torch.IntTensor(lengths_y).max()
     n_samples = len(lengths_x)
@@ -87,6 +95,9 @@ def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=30000,
         y[:lengths_y[idx], idx] = torch.LongTensor(s_y)
     x = Variable(x, volatile=eval)
     y = Variable(y, volatile=eval)
+    if args.cuda:
+        x = x.cuda()
+        y = y.cuda()
     return x, y, lengths_x
 
 
@@ -120,8 +131,8 @@ def memory_efficient_loss(outputs, targets, generator, crit, eval=False):
 
 
 def train(args):
-    train = TextIterator(args.src_train, args.tgt_train,
-                         args.src_dict, args.tgt_dict,
+    train = TextIterator(args.datasets[0], args.datasets[1],
+                         args.dicts[0], args.dicts[1],
                          n_words_source=args.n_words_src,
                          n_words_target=args.n_words_tgt,
                          batch_size=args.batch_size,
@@ -150,20 +161,32 @@ def train(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     n_samples = 0
+    tot_loss = 0
+    n_words = 0
+    uidx = 0 # number of updates
+    eidx = 1
+    ud_start = time.time()
     for x, y in train:
         n_samples += len(x)
-        x, y, lengths_x = prepare_data(x, y)
+        x, y, lengths_x = prepare_data(x, y, maxlen=50)
+
+        # compute loss and update model's parameters
         outputs = model(x, y[:-1], lengths_x)
-        
-        #log_prob = generator(outputs.view())
         loss, df_do = memory_efficient_loss(outputs, y[1:], generator, crit)
         outputs.backward(df_do)
-
         torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
         optimizer.step()
-        print loss
 
-        print '-' * 100
-    pass
+        uidx += 1
+        tot_loss += loss
+        n_words += y[1:].data.ne(0).int().sum()
+        if uidx % args.report_freq == 0:
+            ud = time.time() - ud_start
+            fargs = [eidx, uidx, math.exp(tot_loss/n_words), args.report_freq/ud]
+            print("epoch {:2d} | update {:5d} | ppl {:3f} "
+                  "| speed {:.1f} u/s".format(*fargs))
+            ud_start = time.time()
+
+
 
 train(args)
