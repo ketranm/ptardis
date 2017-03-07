@@ -18,6 +18,7 @@ parser.add_argument('--datasets', required=True, default=[],
 parser.add_argument('--valid_datasets', required=True, default=[],
                     nargs='+', type=str,
                     help='valid_source valid target files.')
+
 # dictionaries
 parser.add_argument('--dicts', required=True, default=[],
                     nargs='+',
@@ -28,8 +29,8 @@ parser.add_argument('--n_words_src', type=int, default=-1,
 parser.add_argument('--n_words_tgt', type=int, default=-1,
                     help='Number of target words')
 parser.add_argument('--ref', default=None, help="reference file")
-# Model options
 
+# Model options
 parser.add_argument('--layers', type=int, default=2,
                     help='Number of layers in the LSTM encoder/decoder')
 parser.add_argument('--rnn_size', type=int, default=500,
@@ -48,7 +49,7 @@ parser.add_argument('--clip', type=float, default=5.,
                     help='Gradient norm clip threshold.')
 parser.add_argument('--max_epochs', type=int, default=15,
                     help='Maxium number of epochs.')
-parser.add_argument('--finish_after', type=int, default=50000,
+parser.add_argument('--finish_after', type=int, default=100000,
                     help='Maximum number of iterations.')
 parser.add_argument('--beam_size', type=int, default=5,
                     help="size of beam for decoding.")
@@ -62,6 +63,7 @@ parser.add_argument('--gpus', default=[], nargs='+', type=int,
 
 parser.add_argument('--seed', default=528491, type=int,
                     help="Inception seed.")
+
 # Utils
 parser.add_argument('--report_freq', type=int, default=20,
                     help="Display training progress.")
@@ -88,7 +90,7 @@ if args.cuda:
 def prepare_data(seqs_x, seqs_y, maxlen=None, eval=False):
     lengths_x = [len(s) for s in seqs_x]
     lengths_y = [len(s) for s in seqs_y]
-    # sort source sentences in dicresing length
+    # sort source sentences in decreasing length
     sorted_x, indices = torch.sort(torch.LongTensor(lengths_x), 0, True)
 
     new_seqs_x = []
@@ -171,7 +173,12 @@ def build_model(args):
     model = models.NMT(encoder, decoder, generator)
     return model
 
+def init_model(model):
+    for p in model.parameters():
+        p.data.uniform_(-0.01, 0.01)
+
 def train(args):
+    subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
     print '| build data iterators'
     train = TextIterator(args.datasets[0] + '.shuf', args.datasets[1] + '.shuf',
                          args.dicts[0], args.dicts[1],
@@ -192,6 +199,8 @@ def train(args):
     if args.n_words_tgt < 0:
         args.n_words_tgt = len(train.target_dict)
 
+    print '| source vocab size %d' % args.n_words_src
+    print '| target vocab size %d' % args.n_words_tgt
     dicts = [train.source_dict, train.target_dict]
 
     print '| build criterion'
@@ -199,7 +208,7 @@ def train(args):
 
     print '| build NMT model'
     model = build_model(args)
-
+    #init_model(model)
     if args.cuda:
         model.cuda()
 
@@ -210,8 +219,9 @@ def train(args):
     estop = False
     history_errs = []
     for eidx in xrange(args.max_epochs):
-        print '| shuffling training data.'
-        subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
+        if eidx > 0:
+            print '| shuffling training data.'
+            subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
         n_samples = 0
         tot_loss = 0
         n_words = 0
@@ -222,8 +232,14 @@ def train(args):
 
             # compute loss and update model's parameters
             outputs = model(x, y[:-1], lengths_x)
-            loss, df_do = memory_efficient_loss(outputs, y[1:], model.generator, crit)
-            outputs.backward(df_do)
+            if args.max_generator_batches > 0:
+                loss, df_do = memory_efficient_loss(outputs, y[1:], model.generator, crit)
+                outputs.backward(df_do)
+            else:
+                pred = model.generator(outputs.view(-1, outputs.size(2)))
+                loss = crit(pred, y[1:].view(-1))
+                loss.div(outputs.size(1)).backward()
+
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
             optimizer.step()
 
@@ -244,7 +260,7 @@ def train(args):
                 valid_ppl = math.exp(valid_nll)
                 history_errs.append(valid_ppl)
                 # resume training mode
-                print('validation perplexity {:.3f}'.format(valid_ppl))
+                print('| update {:5d} valid ppl {:.3f}'.format(uidx, valid_ppl))
                 checkpoint = {
                     'params': model.state_dict(),
                     'args': args,
@@ -254,13 +270,13 @@ def train(args):
                 torch.save(checkpoint, args.saveto)
                 if args.ref is None:
                     continue
-                print '| run beam search'
+                print '| translate ...'
                 infer = Beam(args, model)
                 args.beam_size = 5
                 out_bpe = 'output.{:d}.bpe'.format(uidx)
                 out_txt = 'output.{:d}.txt'.format(uidx)
                 infer.translate(args.valid_datasets[0], out_bpe)
-                print '| recovering from BPE'
+                #print '| recovering from BPE'
                 subprocess.call("sed 's/@@ //g' {:s} > {:s}".format(out_bpe, out_txt), shell=True)
                 cmd = "perl data/multi-bleu.perl {} < {}".format(args.ref, out_txt)
                 p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).stdout.read()
