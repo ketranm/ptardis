@@ -18,6 +18,11 @@ def main(files):
 
     for l in fds[0]:
         lines = [l.strip()] + [ff.readline().strip() for ff in fds[1:]]
+        lengths = [len(l.split()) for l in lines]
+        if min(lengths) * 2 < max(lengths):
+            continue
+        if max(lengths) > 50 or min(lengths) < 1:
+            continue
         print("|||".join(lines), file=tf)
 
     [ff.close() for ff in fds]
@@ -41,6 +46,6 @@ def main(files):
 if __name__ == '__main__':
     main(sys.argv[1:])
 
-    
+
 
 

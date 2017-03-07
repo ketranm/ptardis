@@ -6,7 +6,9 @@ from data_iterator import TextIterator
 import models
 import math
 import time
-
+import subprocess
+from infer import Beam
+import re
 # build args parser
 parser = argparse.ArgumentParser(description='Training NMT')
 
@@ -25,6 +27,7 @@ parser.add_argument('--n_words_src', type=int, default=-1,
                     help='Number of source words')
 parser.add_argument('--n_words_tgt', type=int, default=-1,
                     help='Number of target words')
+parser.add_argument('--ref', default=None, help="reference file")
 # Model options
 
 parser.add_argument('--layers', type=int, default=2,
@@ -47,6 +50,8 @@ parser.add_argument('--max_epochs', type=int, default=15,
                     help='Maxium number of epochs.')
 parser.add_argument('--finish_after', type=int, default=50000,
                     help='Maximum number of iterations.')
+parser.add_argument('--beam_size', type=int, default=5,
+                    help="size of beam for decoding.")
 
 # Memory management
 parser.add_argument('--max_generator_batches', type=int, default=32,
@@ -64,6 +69,9 @@ parser.add_argument('--valid_freq', type=int, default=20,
                     help="Evaluate after every this number of updates.")
 parser.add_argument('--saveto', default='tardis.pt',
                     help="saved file of train model.")
+
+parser.add_argument('--load', default=None,
+                    help="trained model.")
 
 args = parser.parse_args()
 args.cuda = len(args.gpus)
@@ -152,9 +160,20 @@ def eval(model, valid, generator, crit):
         n_words += y[1:].data.ne(0).int().sum()
     return torch.FloatTensor(valid_nlls).sum() / n_words
 
+
+def build_model(args):
+    encoder = models.Encoder(args)
+    decoder = models.Decoder(args)
+    generator = nn.Sequential(
+        nn.Linear(args.rnn_size, args.n_words_tgt),
+        nn.LogSoftmax()
+    )
+    model = models.NMT(encoder, decoder, generator)
+    return model
+
 def train(args):
-    print '| Build data iterators'
-    train = TextIterator(args.datasets[0], args.datasets[1],
+    print '| build data iterators'
+    train = TextIterator(args.datasets[0] + '.shuf', args.datasets[1] + '.shuf',
                          args.dicts[0], args.dicts[1],
                          n_words_source=args.n_words_src,
                          n_words_target=args.n_words_tgt,
@@ -173,22 +192,17 @@ def train(args):
     if args.n_words_tgt < 0:
         args.n_words_tgt = len(train.target_dict)
 
+    dicts = [train.source_dict, train.target_dict]
+
     print '| build criterion'
     crit = build_crit(args.n_words_tgt)
 
-    encoder = models.Encoder(args)
-    decoder = models.Decoder(args)
-    generator = nn.Sequential(
-        nn.Linear(args.rnn_size, args.n_words_tgt),
-        nn.LogSoftmax()
-    )
-    model = models.NMT(encoder, decoder, generator)
+    print '| build NMT model'
+    model = build_model(args)
 
-    #print 'model.state_dict', model.state_dict()
     if args.cuda:
         model.cuda()
 
-    print '| Use Adam optimizer by default!'
     #optimizer = torch.optim.SGD(model.parameters(), lr=1.)
     optimizer = torch.optim.Adamax(model.parameters(), lr=args.lr)
 
@@ -196,6 +210,8 @@ def train(args):
     estop = False
     history_errs = []
     for eidx in xrange(args.max_epochs):
+        print '| shuffling training data.'
+        subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
         n_samples = 0
         tot_loss = 0
         n_words = 0
@@ -206,7 +222,7 @@ def train(args):
 
             # compute loss and update model's parameters
             outputs = model(x, y[:-1], lengths_x)
-            loss, df_do = memory_efficient_loss(outputs, y[1:], generator, crit)
+            loss, df_do = memory_efficient_loss(outputs, y[1:], model.generator, crit)
             outputs.backward(df_do)
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
             optimizer.step()
@@ -224,17 +240,36 @@ def train(args):
 
             if uidx % args.valid_freq == 0:
                 model.eval()
-                valid_nll = eval(model, valid, generator, crit)
+                valid_nll = eval(model, valid, model.generator, crit)
                 valid_ppl = math.exp(valid_nll)
                 history_errs.append(valid_ppl)
                 # resume training mode
-                model.train()
                 print('validation perplexity {:.3f}'.format(valid_ppl))
                 checkpoint = {
-                    'model': model,
+                    'params': model.state_dict(),
                     'args': args,
+                    'history_errs' : history_errs,
+                    'dicts': dicts
                 }
                 torch.save(checkpoint, args.saveto)
+                if args.ref is None:
+                    continue
+                print '| run beam search'
+                infer = Beam(args, model)
+                args.beam_size = 5
+                out_bpe = 'output.{:d}.bpe'.format(uidx)
+                out_txt = 'output.{:d}.txt'.format(uidx)
+                infer.translate(args.valid_datasets[0], out_bpe)
+                print '| recovering from BPE'
+                subprocess.call("sed 's/@@ //g' {:s} > {:s}".format(out_bpe, out_txt), shell=True)
+                cmd = "perl data/multi-bleu.perl {} < {}".format(args.ref, out_txt)
+                p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).stdout.read()
+                bleu = re.search("[\d]+.[\d]+", p)
+                if bleu:
+                    print '| BLEU = {}'.format(bleu.group())
+                else:
+                    print '| ERROR, please do manual evaluation for {}'.format(out_txt)
+                model.train()
 
 
             if uidx >= args.finish_after:
@@ -247,3 +282,11 @@ def train(args):
             break
 
 train(args)
+if args.load is not None:
+    checkpoint = torch.load(args.load)
+    model = build_model(checkpoint['args'])
+    if args.cuda:
+        model.cuda()
+    model.load_state_dict(checkpoint['params'])
+    infer = Beam(args, model)
+    infer.translate(args.valid_datasets[0])

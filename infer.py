@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
 import cPickle as pkl
 
@@ -8,11 +7,11 @@ class Beam(object):
     """
     Beam search class for NMT
     """
-    def __init__(self, args):
+    def __init__(self, args, model):
         self.args = args
         self.tt = torch.cuda if len(args.gpus) >0  else torch
-        checkpoint = torch.load(args.checkpoint)
-        self.model = checkpoint['model']
+        self.model = model
+        self.model.eval()
         self.dicts = [pkl.load(open(args.dicts[0], 'rb')),
                       pkl.load(open(args.dicts[1], 'rb'))]
         self.idx2w = {}
@@ -81,11 +80,11 @@ class Beam(object):
 
 
             done_y = next_ys.eq(self.eos_idx)
-            if done_y.sum() > 0:
+            if done_y.sum() > 0 and t > 0:
                 for i in range(k):
                     if next_ys[i] == 3:
                         j = next_hp[i]
-                        text = self.decode_string(hypos[0:t-1, j])
+                        text = self.decode_string(hypos[0:t, j])
                         completed_hyps.append((text, scores[i] / (t+1) ))
                         k -= 1
                 if k > 0:
@@ -112,10 +111,9 @@ class Beam(object):
             best_h = hypos.index_select(0, idx).view(-1)
             return self.decode_string(best_h)
 
-    def translate(self, text_file, out_file='trans.txt'):
+    def translate(self, text_file, out_file='output.txt'):
         fw = open(out_file, 'w')
         for line in open(text_file):
-            print line
             src_idx = self.encode_string(line)
             s = self.beam_search(src_idx)
             fw.write(s + '\n')
