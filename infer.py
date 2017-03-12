@@ -103,8 +103,8 @@ class Beam(object):
             init_hidden = [h.index_select(1, next_hp) for h in dec_hidden]
 
         if len(completed_hyps) > 0:
-            completed_hyps.sort(key=lambda tup: tup[1], reverse=True)
-            best_h = completed_hyps.pop(0)
+            completed_hyps.sort(key=lambda tup: tup[1])
+            best_h = completed_hyps.pop()
             return best_h[0]
         else:
             best_s, idx = scores.topk(1)

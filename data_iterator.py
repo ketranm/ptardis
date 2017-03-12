@@ -33,7 +33,7 @@ class TextIterator:
 
         self.source_buffer = []
         self.target_buffer = []
-        self.k = batch_size * 30
+        self.k = batch_size * 20
 
         self.end_of_data = False
 
