@@ -45,7 +45,8 @@ class Encoder(nn.Module):
         self.hidden_size = args.rnn_size // 2
 
         super(Encoder, self).__init__()
-        self.lut = nn.Embedding(args.n_words_src, args.emb_size, padding_idx=0)
+        self.lut = nn.Embedding(args.n_words_src, args.emb_size,
+                                padding_idx=0)
         self.rnn = nn.LSTM(args.emb_size, self.hidden_size,
                            num_layers=args.layers,
                            dropout=args.dropout,
@@ -55,7 +56,6 @@ class Encoder(nn.Module):
         """Forward computation of the encoder. This function handles variable
         length input, lengths is a list of actual sequence lengths of input
         """
-        batch_size = input.size(1)
         emb = self.lut(input)
         packed_emb = nn.utils.rnn.pack_padded_sequence(emb, lengths)
         outputs, hidden = self.rnn(packed_emb)
@@ -101,8 +101,7 @@ class Decoder(nn.Module):
         input_size = args.emb_size + args.rnn_size
 
         super(Decoder, self).__init__()
-        self.lut = nn.Embedding(args.n_words_tgt,
-                                args.emb_size,
+        self.lut = nn.Embedding(args.n_words_tgt, args.emb_size,
                                 padding_idx=0)
         self.rnn = StackedLSTM(args.layers, input_size, args.rnn_size,
                                args.dropout)

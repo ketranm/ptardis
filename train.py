@@ -71,6 +71,7 @@ parser.add_argument('--saveto', default='tardis.pt',
                     help="saved file of train model.")
 parser.add_argument('--load', default=None,
                     help="trained model.")
+parser.add_argument('--output', default='output', help='temporal output files.')
 
 args = parser.parse_args()
 args.cuda = len(args.gpus)
@@ -272,8 +273,8 @@ def train(args):
                 print '| translate ...'
                 infer = Beam(args, model)
                 args.beam_size = 5
-                out_bpe = 'output20k.{:d}.bpe'.format(uidx)
-                out_txt = 'output20k.{:d}.txt'.format(uidx)
+                out_bpe = '%s.%d.bpe' % (args.output, uidx)
+                out_txt = '%s.%d.txt' % (args.output, uidx)
                 infer.translate(args.valid_datasets[0], out_bpe)
                 #print '| recovering from BPE
                 subprocess.call("sed 's/@@ //g' {:s} > {:s}".format(out_bpe, out_txt), shell=True)
