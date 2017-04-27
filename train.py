@@ -75,7 +75,10 @@ parser.add_argument('--output', default='output', help='temporal output files.')
 
 args = parser.parse_args()
 args.cuda = len(args.gpus)
+
+print 'configuration'
 print(args)
+print '-' * 42
 torch.manual_seed(args.seed)
 
 if torch.cuda.is_available() and not args.cuda:
@@ -176,17 +179,19 @@ def build_model(args):
 def init_model(model):
     params = model.state_dict()
     for k, weight in params.iteritems():
-        if k.startswith('weight_hh_l'):
+        if k.startswith('weight_hh'):
             weight.normal_(0, 0.1)
             new_w = torch.nn.init.orthogonal(weight)
-            weight.copy_(new_w)
-
-def init_modelx(model):
-    for p in model.parameters():
-        p.data.uniform_(-0.04, 0.04)
+            weight.copy_(new_w.mul_(0.1))
+        elif k.startswith('bias'):
+            weight.fill_(0)
+        elif k.startswith('weight_ih'):
+            weight.normal_(0, 0.1)
+        else:
+            pass
 
 def train(args):
-    #subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
+    subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
     print '| build data iterators'
     train = TextIterator(args.datasets[0] + '.shuf', args.datasets[1] + '.shuf',
                          args.dicts[0], args.dicts[1],

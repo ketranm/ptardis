@@ -2,7 +2,8 @@ import torch
 from torch.autograd import Variable
 import cPickle as pkl
 
-_INF = 1e10
+#_INF = 1e10
+_INF = float('inf')
 class Beam(object):
     """
     Beam search class for NMT

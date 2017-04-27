@@ -1,17 +1,18 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.functional as F
 
-
-_INF = 1e10 #float('inf')
-
-class GlobalAttention(nn.Module):
-    def __init__(self, dim):
-        super(GlobalAttention, self).__init__()
-        self.linear_in = nn.Linear(dim, dim, bias=False)
-        self.sm = nn.Softmax()
-        self.linear_out = nn.Linear(dim*2, dim, bias=False)
-        self.tanh = nn.Tanh()
+_INF = float('inf')
+class Attention(nn.Module):
+    # https://arxiv.org/pdf/1703.04357.pdf
+    def __init__(self, input_size):
+        super(Attention, self).__init__()
+        self.f_c = nn.Linear(input_size, input_size, bias=False)
+        self.f_i = nn.Linear(input_size, input_size, bias=False)
+        self.f_a = nn.Linear(input_size, 1, bias=False)
+        self.linear_out = nn.Linear(input_size*2, input_size, bias=False)
+        self.input_size = input_size
         self.mask = None
 
     def apply_mask(self, mask):
@@ -19,24 +20,59 @@ class GlobalAttention(nn.Module):
 
     def forward(self, input, context):
         """
-        input: batch x dim
-        context: batch x sourceL x dim
+        input: batch_size x output_size
+        context: batch_size x bptt x input_size
         """
-        targetT = self.linear_in(input).unsqueeze(2)  # batch x dim x 1
+        context = context.contiguous()
+        batch_size, bptt, input_size = context.size()
+        output_size = input.size(1)
+
+        c_t = self.f_c(context.view(-1, input_size)).view(batch_size, bptt, -1)
+        i_t = self.f_i(input)[:,None,:].expand_as(c_t)
+        sum_input = F.tanh(c_t + i_t)
+        e = self.f_a(sum_input.view(-1, output_size)).view(batch_size, bptt)
+
+        if self.mask is not None:
+            e.data.masked_fill_(self.mask, -_INF)
+        attn = F.softmax(e)
+        weighted_context = torch.bmm(attn[:,None,:], context).squeeze(1)
+        context_combined = torch.cat((weighted_context, input), 1)
+        context_output = F.tanh(self.linear_out(context_combined))
+
+        return context_output, attn
+
+
+class GlobalAttention(nn.Module):
+    def __init__(self, input_size):
+        super(GlobalAttention, self).__init__()
+        self.linear_in = nn.Linear(input_size, input_size, bias=False)
+        self.linear_out = nn.Linear(input_size * 2, input_size, bias=False)
+        self.mask = None
+
+    def apply_mask(self, mask):
+        self.mask = mask
+
+    def forward(self, input, context):
+        """
+        Args:
+            input: batch x input_size
+            context: batch x bptt x input_size
+        """
+        target_t = self.linear_in(input).unsqueeze(2)  # batch x input_size x 1
 
         # Get attention
-        attn = torch.bmm(context, targetT).squeeze(2)  # batch x sourceL
+        attn = torch.bmm(context, target_t).squeeze(2)  # batch x bptt
         if self.mask is not None:
             attn.data.masked_fill_(self.mask, -_INF)
-        attn = self.sm(attn)
-        attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x sourceL
+        attn = F.softmax(attn)
+        attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x bptt
 
-        weightedContext = torch.bmm(attn3, context).squeeze(1)  # batch x dim
-        contextCombined = torch.cat((weightedContext, input), 1)
+        weighted_context = torch.bmm(attn3, context).squeeze(1)  # batch x input_size
+        context_combined = torch.cat((weighted_context, input), 1)
+        context_output = F.tanh(self.linear_out(context_combined))
 
-        contextOutput = self.tanh(self.linear_out(contextCombined))
+        return context_output, attn
 
-        return contextOutput, attn
 
 class Encoder(nn.Module):
 
@@ -105,6 +141,7 @@ class Decoder(nn.Module):
                                 padding_idx=0)
         self.rnn = StackedLSTM(args.layers, input_size, args.rnn_size,
                                args.dropout)
+        #self.attn = Attention(args.rnn_size)
         self.attn = GlobalAttention(args.rnn_size)
         self.dropout = nn.Dropout(args.dropout)
         self.hidden_size = args.rnn_size
@@ -156,11 +193,16 @@ class NMT(nn.Module):
                 .transpose(1, 2).contiguous() \
                 .view(h.size(0) // 2, h.size(1), h.size(2) * 2)
 
+    def _init_hidden(self, enc_hidden):
+        hidden = (self._fix_enc_hidden(enc_hidden[0]),
+                  self._fix_enc_hidden(enc_hidden[1]))
+        return hidden
 
     def forward(self, x, y, lengths_x):
         context, enc_hidden = self.encoder(x, lengths_x)
-        enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
-                      self._fix_enc_hidden(enc_hidden[1]))
+        #enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
+        #              self._fix_enc_hidden(enc_hidden[1]))
+        enc_hidden = self._init_hidden(enc_hidden)
         x_mask = x.data.eq(0).t() # batch x seqlen
         out, dec_hidden, attn = self.decoder(y, enc_hidden,
                                              context.t(), x_mask)
