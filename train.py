@@ -9,6 +9,7 @@ import time
 import subprocess
 from infer import Beam
 import re
+import torch.nn.init as init
 
 # build args parser
 parser = argparse.ArgumentParser(description='Training NMT')
@@ -179,16 +180,16 @@ def build_model(args):
 def init_model(model):
     params = model.state_dict()
     for k, weight in params.iteritems():
-        if k.startswith('weight_hh'):
-            weight.normal_(0, 0.1)
-            new_w = torch.nn.init.orthogonal(weight)
-            weight.copy_(new_w.mul_(0.1))
-        elif k.startswith('bias'):
+        w_name = k.split('.')[-1]
+        tmp = torch.FloatTensor(weight.size())
+        if w_name.startswith('weight_hh'):
+            nn.init.orthogonal(tmp, 0.1)
+            weight.copy_(tmp)
+        elif w_name.startswith('bias'):
             weight.fill_(0)
-        elif k.startswith('weight_ih'):
-            weight.normal_(0, 0.1)
         else:
-            pass
+            nn.init.xavier_normal(tmp)
+            weight.copy_(tmp)
 
 def train(args):
     subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
@@ -264,7 +265,7 @@ def train(args):
                 ud = time.time() - ud_start
                 fargs = [eidx, uidx, math.exp(tot_loss/n_words),
                          args.report_freq/ud]
-                print("epoch {:2d} | update {:5d} | ppl {:3f} "
+                print("epoch {:2d} | update {:5d} | ppl {:.3f} "
                       "| speed {:.1f} b/s".format(*fargs))
                 ud_start = time.time()
 
