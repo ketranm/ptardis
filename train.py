@@ -49,11 +49,11 @@ parser.add_argument('--lr', type=float, default=0.0001,
 parser.add_argument('--clip', type=float, default=5.,
                     help='Gradient norm clip threshold.')
 parser.add_argument('--max_epochs', type=int, default=15,
-                    help='Maxium number of epochs.')
+                    help='Maximum number of epochs.')
 parser.add_argument('--finish_after', type=int, default=1000000,
                     help='Maximum number of iterations.')
 parser.add_argument('--beam_size', type=int, default=5,
-                    help="size of beam for decoding.")
+                    help="size of the beam for decoding.")
 
 # Memory management
 parser.add_argument('--max_generator_batches', type=int, default=32,
@@ -183,13 +183,20 @@ def init_model(model):
         w_name = k.split('.')[-1]
         tmp = torch.FloatTensor(weight.size())
         if w_name.startswith('weight_hh'):
-            nn.init.orthogonal(tmp, 0.1)
+            nn.init.orthogonal(tmp, 1)
             weight.copy_(tmp)
-        elif w_name.startswith('bias'):
-            weight.fill_(0)
         else:
-            nn.init.xavier_normal(tmp)
-            weight.copy_(tmp)
+            pass
+            #weight.normal_(0, 0.01)
+        #elif w_name.startswith('bias'):
+        #    weight.normal_(0, 0.1)
+        #else:
+        #    nn.init.xavier_normal(tmp)
+        #    weight.copy_(tmp)
+
+def init_uniform(model, init_range=0.04):
+    for p in model.parameters():
+        p.data.uniform_(-init_range, init_range)
 
 def train(args):
     subprocess.call(['python', './data/shuffle.py', args.datasets[0], args.datasets[1]])
@@ -222,7 +229,8 @@ def train(args):
 
     print '| build NMT model'
     model = build_model(args)
-    init_model(model)
+    #init_model(model)
+    init_uniform(model)
     if args.cuda:
         model.cuda()
 
