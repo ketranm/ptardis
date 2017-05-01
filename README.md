@@ -2,13 +2,14 @@
 pytorch implementation of Tardis
 
 # Data Preparation
-Prepare your own proprecessing script. Example of such a script is
-`data/preprocess_wmt.sh`. The proprecssing step is borrowed from [dl4mt](https://github.com/nyu-dl/dl4mt-tutorial). We own a thank to Orhan Firat, who constantly brags "_we have the best data processing pipe-line in the world_". Taking a leap of faith, we simply steal his data processing script.
+Prepare your own pre-processing script. Example of such a script is
+`data/preprocess_wmt.sh`. The pre-processing step is borrowed from [dl4mt](https://github.com/nyu-dl/dl4mt-tutorial). We own a thank to Orhan Firat, who constantly brags "_we have the best data processing pipe-line in the world_". Taking a leap of faith, we simply steal his data processing script.
 
 ```
-sh data/preprocess_wmt.sh de en . subword-nmt ../wmt
+sh data/preprocess_wmt.sh de en . subword-nmt ../wmt20k
 ```
 
+After running the script, many additional files are written into `wmt20k` directory. Then you are set.
 # Building your NMT system
 
 Example
@@ -25,5 +26,5 @@ Note that, Ke Tran is too lazy to write up the documentation. You probably have 
 # Credit (for whom we stole)
  - Orhan Firat and dl4mt
  - OpenMT
- - Ke Tran (_doing with without being paid_)
+ - Ke Tran (_for many hours writing this code without being paid_)
  - Coffee and Cigarettes
