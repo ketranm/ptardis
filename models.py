@@ -4,6 +4,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 _INF = float('inf')
+
+
 class Attention(nn.Module):
     # https://arxiv.org/pdf/1703.04357.pdf
     def __init__(self, input_size):
