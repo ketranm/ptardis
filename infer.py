@@ -2,8 +2,155 @@ import torch
 from torch.autograd import Variable
 import cPickle as pkl
 
-#_INF = 1e10
 _INF = float('inf')
+
+
+class MyPolicy(object):
+    """Simple policy to get some stats"""
+    def __init__(self, args, model):
+        self.args = args
+        self.tt = torch.cuda if len(args.gpus) >0  else torch
+        self.model = model
+        self.model.eval()
+        self.dicts = [pkl.load(open(args.dicts[0], 'rb')),
+                      pkl.load(open(args.dicts[1], 'rb'))]
+        self.idx2w = {}
+        for w, idx in self.dicts[1].iteritems():
+            self.idx2w[idx] = w
+        self.bos_idx = self.dicts[1]['<bos>']
+        self.eos_idx = self.dicts[1]['<eos>']
+
+    def encode_string(self, ss, dicts, pad=False):
+        """
+        pad: boolean indicating to use bos_idx and eos_idx
+        """
+        ss = ss.split()
+        ss = [dicts[w] if w in dicts else 1 for w in ss]
+        if pad:
+            ss = [self.bos_idx] + ss + [self.eos_idx]
+        ss = Variable(torch.LongTensor(ss).view(-1, 1),
+                        volatile=True)
+        if self.args.cuda:
+            ss = ss.cuda()
+        return ss
+
+    def rollin(self, input, ref):
+        lengths = [input.size(0)]
+        context, enc_hidden = self.model.encoder(input, lengths)
+        # alias
+        decoder = self.model.decoder
+        generator = self.model.generator
+
+        init_output = None
+        context = context.t()
+        decoder.attn.mask = None
+        hidden = (self.model._fix_enc_hidden(enc_hidden[0]),
+                  self.model._fix_enc_hidden(enc_hidden[1]))
+
+        # roll in with the reference
+        scores = []
+        tot = 0
+        violated = 0
+        for t in range(ref.size(0)-1):
+            output, dec_hidden, attn = decoder(ref[t][:,None], hidden, context,
+                                            init_output=init_output)
+            log_probs = generator(output.squeeze(0)).data.view(-1)
+            hidden = dec_hidden
+            init_output = output.squeeze(1)
+            y = log_probs[ref[t+1].data[0]]
+            #  kthvalue does not support GPU, so we hack around
+            a, b = log_probs.topk(5)
+            if a.min() > y:
+                violated += 1
+            s = log_probs.view(-1)[ref[t+1].data[0]]
+            scores += [s]
+            tot += 1
+        print '=> violation %.3f' % (violated * 1. / tot)
+
+        return scores
+
+    def get_scores(self, input_file, ref_file):
+        with open(input_file) as fi, open(ref_file) as fr:
+            for src, ref in zip(fi, fr):
+                x = self.encode_string(src, self.dicts[0])
+                y = self.encode_string(ref, self.dicts[1], True)
+                ref_tokens = ref.split()
+                scores = self.rollin(x, y)
+                scores.pop() # remove the last prediction <eos>
+                #print len(ref_tokens), len(scores)
+                #ss = ['%s %.4f' % (w, s) for w, s in zip(ref_tokens, scores)]
+                ss = ['%.5f' % s for s in scores]
+                print ' '.join(ss)
+
+
+class RefPolicy(object):
+    """Simple reference policy to get some stats"""
+    def __init__(self, args, model):
+        self.args = args
+        self.tt = torch.cuda if len(args.gpus) >0  else torch
+        self.model = model
+        self.model.eval()
+        self.dicts = [pkl.load(open(args.dicts[0], 'rb')),
+                      pkl.load(open(args.dicts[1], 'rb'))]
+        self.idx2w = {}
+        for w, idx in self.dicts[1].iteritems():
+            self.idx2w[idx] = w
+        self.bos_idx = self.dicts[1]['<bos>']
+        self.eos_idx = self.dicts[1]['<eos>']
+
+    def encode_string(self, ss, dicts, pad=False):
+        """
+        pad: boolean indicating to use bos_idx and eos_idx
+        """
+        ss = ss.split()
+        ss = [dicts[w] if w in dicts else 1 for w in ss]
+        if pad:
+            ss = [self.bos_idx] + ss + [self.eos_idx]
+        ss = Variable(torch.LongTensor(ss).view(-1, 1),
+                        volatile=True)
+        if self.args.cuda:
+            ss = ss.cuda()
+        return ss
+
+    def rollin(self, input, ref):
+        lengths = [input.size(0)]
+        context, enc_hidden = self.model.encoder(input, lengths)
+        # alias
+        decoder = self.model.decoder
+        generator = self.model.generator
+
+        init_output = None
+        context = context.t()
+        decoder.attn.mask = None
+        hidden = (self.model._fix_enc_hidden(enc_hidden[0]),
+                  self.model._fix_enc_hidden(enc_hidden[1]))
+
+        # roll in with the reference
+        scores = []
+        for t in range(ref.size(0)-1):
+            output, dec_hidden, attn = decoder(ref[t][:,None], hidden, context,
+                                            init_output=init_output)
+            log_probs = generator(output.squeeze(0)).data
+            hidden = dec_hidden
+            init_output = output.squeeze(1)
+            s = log_probs.view(-1)[ref[t+1].data[0]]
+            scores += [s]
+
+        return scores
+
+    def get_scores(self, input_file, ref_file):
+        with open(input_file) as fi, open(ref_file) as fr:
+            for src, ref in zip(fi, fr):
+                x = self.encode_string(src, self.dicts[0])
+                y = self.encode_string(ref, self.dicts[1], True)
+                ref_tokens = ref.split()
+                scores = self.rollin(x, y)
+                scores.pop() # remove the last prediction <eos>
+                #print len(ref_tokens), len(scores)
+                #ss = ['%s %.4f' % (w, s) for w, s in zip(ref_tokens, scores)]
+                ss = ['%.5f' % s for s in scores]
+                print ' '.join(ss)
+
 class Beam(object):
     """
     Beam search class for NMT
