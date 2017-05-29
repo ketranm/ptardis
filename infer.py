@@ -254,7 +254,7 @@ class Beam(object):
             return best_h[0]
         else:
             best_s, idx = scores.topk(1)
-            best_h = hypos.index_select(0, idx).view(-1)
+            best_h = hypos.index_select(1, idx).view(-1)
             return self.decode_string(best_h)
 
     def translate(self, text_file, out_file='output.txt'):
