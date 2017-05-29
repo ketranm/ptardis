@@ -10,7 +10,6 @@ import subprocess
 from infer import Beam
 import re
 import torch.nn.init as init
-
 # build args parser
 parser = argparse.ArgumentParser(description='Training NMT')
 
@@ -181,18 +180,10 @@ def init_model(model):
     params = model.state_dict()
     for k, weight in params.iteritems():
         w_name = k.split('.')[-1]
-        tmp = torch.FloatTensor(weight.size())
         if w_name.startswith('weight_hh'):
-            nn.init.orthogonal(tmp, 1)
+            tmp = torch.FloatTensor(weight.size())
+            init.orthogonal(tmp, 1)
             weight.copy_(tmp)
-        else:
-            pass
-            #weight.normal_(0, 0.01)
-        #elif w_name.startswith('bias'):
-        #    weight.normal_(0, 0.1)
-        #else:
-        #    nn.init.xavier_normal(tmp)
-        #    weight.copy_(tmp)
 
 def init_uniform(model, init_range=0.04):
     for p in model.parameters():
@@ -230,7 +221,6 @@ def train(args):
     print '| build NMT model'
     model = build_model(args)
     #init_model(model)
-    init_uniform(model)
     if args.cuda:
         model.cuda()
 

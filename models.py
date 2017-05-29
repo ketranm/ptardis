@@ -72,7 +72,8 @@ class GlobalAttention(nn.Module):
         weighted_context = torch.bmm(attn3, context).squeeze(1)  # batch x input_size
         context_combined = torch.cat((weighted_context, input), 1)
         context_output = F.tanh(self.linear_out(context_combined))
-
+        #gated_output = F.tanh(self.linear_out(context_combined))
+        #context_output = gated_output * weighted_context + (1-gated_output) * input
         return context_output, attn
 
 

@@ -206,9 +206,7 @@ class Beam(object):
 
         context, enc_hidden = self.model.encoder(input, lengths)
 
-        init_hidden = (self.model._fix_enc_hidden(enc_hidden[0]),
-                       self.model._fix_enc_hidden(enc_hidden[1]))
-
+        init_hidden = self.model._init_hidden(enc_hidden)
         # alias
         decoder = self.model.decoder
         generator = self.model.generator
